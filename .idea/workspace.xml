@@ -4,14 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="482fcb25-dff2-4a42-99a7-49e18b77ad6c" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/PartnerAIBot.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/PartnerAIBot.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/agents/secretary.py" beforeDir="false" afterPath="$PROJECT_DIR$/agents/secretary.py" afterDir="false" />
+    <list default="true" id="482fcb25-dff2-4a42-99a7-49e18b77ad6c" name="Changes" comment="Git settings">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/sheets.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/sheets.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -72,6 +67,19 @@
       <option name="presentableId" value="Default" />
       <updated>1779357789112</updated>
     </task>
+    <task id="LOCAL-00001" summary="Git settings">
+      <option name="closed" value="true" />
+      <created>1780831657672</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1780831657672</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Git settings" />
+    <option name="LAST_COMMIT_MESSAGE" value="Git settings" />
   </component>
 </project>
