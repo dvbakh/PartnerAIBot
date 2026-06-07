@@ -7,7 +7,7 @@ SCOPE = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
 ]
-CREDENTIALS_FILE = "credentials.json"
+CREDENTIALS_FILE = "GoogleCreds9cf91e5daeee.json"
 
 credentials = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, SCOPE)
 client = gspread.authorize(credentials)

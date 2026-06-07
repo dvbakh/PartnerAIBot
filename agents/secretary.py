@@ -1,146 +1,128 @@
-import sys
-import os
-import logging
-from typing import TypedDict, List
-from langgraph.graph import StateGraph, END
 import json
-from openai import OpenAI
+import logging
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from openai import OpenAI
 from config import MISTRAL_API_KEY
 
 logger = logging.getLogger(__name__)
 
-class SecretaryState(TypedDict):
-    messages: List[dict]
-    task_params: dict
-    missing_fields: List[str]
-    next_action: str
-
-# ---------- Mistral API клиент ----------
 client = OpenAI(
     api_key=MISTRAL_API_KEY,
     base_url="https://api.mistral.ai/v1"
 )
-MISTRAL_MODEL = "mistral-small-latest"   # или "open-mistral-7b" (бесплатный)
+MODEL = "mistral-small-latest"
 
-EXTRACT_PROMPT = """Ты — ассистент менеджера по сбору бюджетов.
-Извлеки из сообщения параметры задачи:
-- month (строка, например "май 2026")
-- geo_list (список гео, например ["BY","KZ"])
-- deadline (строка, например "2026-05-05 18:00")
-Если какого-то параметра нет, оставь его значение пустым (null).
-Ответь ТОЛЬКО JSON-объектом без пояснений.
-Пример: {"month":"май 2026","geo_list":["BY","KZ"],"deadline":"2026-05-05 18:00"}"""
+class SecretaryAgent:
+    """
+    AI-агент для обработки сообщений менеджера.
+    Извлекает месяц, список GEO и дедлайн с помощью Mistral.
+    """
 
-def call_mistral(prompt: str) -> str:
-    """Запрос к Mistral API через OpenAI-совместимый интерфейс."""
-    try:
-        response = client.chat.completions.create(
-            model=MISTRAL_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=256
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.warning(f"Mistral API call failed: {e}")
-        return ""
+    def __init__(self):
+        self.state = {
+            "month": None,
+            "geo_list": None,
+            "deadline": None,
+            "waiting_confirmation": False,
+        }
 
-def extract_params(state: SecretaryState) -> SecretaryState:
-    user_msg = state["messages"][-1]["content"]
-    full_prompt = EXTRACT_PROMPT + "\nСообщение менеджера: " + user_msg
-    raw_response = call_mistral(full_prompt)
+    # ============================================================
+    # Статический интерфейс для main.py
+    # ============================================================
+    @staticmethod
+    def create_state() -> dict:
+        """Создаёт начальное состояние (словарь)."""
+        return {
+            "month": None,
+            "geo_list": None,
+            "deadline": None,
+            "waiting_confirmation": False,
+        }
 
-    # Mistral обычно не дублирует промпт, но на всякий случай очистим
-    if full_prompt in raw_response:
-        raw_response = raw_response.split(full_prompt)[-1].strip()
+    @staticmethod
+    def process_message(state: dict, text: str) -> dict:
+        """
+        Обрабатывает сообщение менеджера.
+        Возвращает словарь с action, state и message.
+        """
+        agent = SecretaryAgent()
+        agent.state = state
 
-    try:
-        extracted = json.loads(raw_response)
-    except Exception:
-        extracted = {}
+        # Извлекаем параметры через LLM
+        extracted = agent._llm_extract_task(text)
+        if extracted:
+            agent._merge_state(extracted)
 
-    current_params = state.get("task_params", {})
-    for key, value in extracted.items():
-        if value:
-            current_params[key] = value
-    state["task_params"] = current_params
-    return state
+        if agent._is_state_complete():
+            return {
+                "action": "create_task",
+                "state": agent.state,
+                "message": "Задача сформирована. Запускаю сбор бюджета."
+            }
+        else:
+            return {
+                "action": "continue",
+                "state": agent.state,
+                "message": agent._build_missing_fields_message()
+            }
 
-# -------- Остальные функции остаются БЕЗ ИЗМЕНЕНИЙ --------
-def check_missing(state: SecretaryState) -> SecretaryState:
-    required = ["month", "geo_list", "deadline"]
-    missing = [f for f in required if not state["task_params"].get(f)]
-    state["missing_fields"] = missing
-    state["next_action"] = "ask" if missing else "confirm"
-    return state
+    # ============================================================
+    # LLM-экстракция параметров задачи
+    # ============================================================
+    def _llm_extract_task(self, user_message: str) -> dict:
+        system_prompt = """
+Ты — секретарь, который извлекает параметры задачи из сообщения менеджера.
+Верни только JSON-объект с полями:
+- month (строка, месяц, например "апрель")
+- geo_list (массив строк, GEO из списка: KZ, BY, RU, UA, KG, AM, TJ, UZ)
+- deadline (строка или null, если не указано)
 
-def generate_question(state: SecretaryState) -> SecretaryState:
-    prompts = {
-        "month": "За какой месяц нужно собрать бюджеты?",
-        "geo_list": "По каким гео собираем? (например, BY, KZ)",
-        "deadline": "Какой крайний срок сдачи бюджетов?"
-    }
-    questions = [prompts[m] for m in state["missing_fields"]]
-    text = "Для запуска сбора нужно уточнить:\n" + "\n".join(f"- {q}" for q in questions)
-    state["messages"].append({"role": "assistant", "content": text})
-    return state
+Если какого-то поля нет, верни его как null.
+Не добавляй никаких пояснений, только JSON.
+"""
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.0,
+                response_format={"type": "json_object"}
+            )
+            raw = response.choices[0].message.content.strip()
+            data = json.loads(raw)
 
-def confirm_task(state: SecretaryState) -> SecretaryState:
-    params = state["task_params"]
-    text = (
-        f"Проверьте задачу:\n"
-        f"Месяц: {params['month']}\n"
-        f"Гео: {params['geo_list']}\n"
-        f"Дедлайн: {params['deadline']}\n\n"
-        f"Всё верно? Запускаем сбор?"
-    )
-    state["messages"].append({"role": "assistant", "content": text})
-    state["next_action"] = "wait_confirmation"
-    return state
+            # Оставляем только допустимые GEO
+            valid_geos = {"KZ", "BY", "RU"}
+            if "geo_list" in data and isinstance(data["geo_list"], list):
+                data["geo_list"] = [g.upper() for g in data["geo_list"] if g.upper() in valid_geos]
+            return data
+        except Exception as e:
+            logger.exception("LLM extraction failed")
+            return {}
 
-def process_confirmation(state: SecretaryState) -> SecretaryState:
-    user_msg = state["messages"][-1]["content"].lower()
-    if any(word in user_msg for word in ["да", "запускай", "верно", "подтверждаю", "запустить", "ок"]):
-        state["next_action"] = "complete"
-        state["messages"].append({"role": "assistant", "content": "Принято. Запускаю сбор бюджетов."})
-    else:
-        state["next_action"] = "ask"
-        state["messages"].append({"role": "assistant", "content": "Что нужно изменить?"})
-    return state
+    # ============================================================
+    # Вспомогательные методы состояния
+    # ============================================================
+    def _merge_state(self, new_state: dict):
+        for k in self.state:
+            if k in new_state and new_state[k] is not None:
+                self.state[k] = new_state[k]
 
-def build_secretary_graph():
-    graph = StateGraph(SecretaryState)
-    graph.add_node("extract", extract_params)
-    graph.add_node("check_missing", check_missing)
-    graph.add_node("ask_question", generate_question)
-    graph.add_node("confirm", confirm_task)
-    graph.add_node("process_confirm", process_confirmation)
+    def _is_state_complete(self) -> bool:
+        return all([
+            self.state["month"],
+            self.state["geo_list"],
+            self.state["deadline"]
+        ])
 
-    graph.set_entry_point("extract")
-    graph.add_edge("extract", "check_missing")
-    graph.add_conditional_edges(
-        "check_missing",
-        lambda s: "ask" if s["next_action"] == "ask" else "confirm",
-        {"ask": "ask_question", "confirm": "confirm"}
-    )
-    graph.add_edge("ask_question", END)
-    graph.add_edge("confirm", END)
-    return graph.compile()
-
-secretary_app = build_secretary_graph()
-
-def run_secretary_turn(state: SecretaryState) -> SecretaryState:
-    if state.get("next_action") == "wait_confirmation":
-        state = process_confirmation(state)
-        if state["next_action"] == "ask":
-            state = extract_params(state)
-            state = check_missing(state)
-            if state["next_action"] == "ask":
-                state = generate_question(state)
-            else:
-                state = confirm_task(state)
-    else:
-        state = secretary_app.invoke(state)
-    return state
+    def _build_missing_fields_message(self) -> str:
+        missing = []
+        if not self.state["month"]:
+            missing.append("месяц")
+        if not self.state["geo_list"]:
+            missing.append("GEO")
+        if not self.state["deadline"]:
+            missing.append("дедлайн")
+        return "Уточните: " + ", ".join(missing)
