@@ -1,7 +1,7 @@
 __pycache__/
 *.pyc
 .env
-GoogleCreds.json
+GoogleCreds9cf91e5daeee.json
 *.db
 report_task_*.csv
 .venv/
