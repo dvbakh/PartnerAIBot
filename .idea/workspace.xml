@@ -4,30 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="482fcb25-dff2-4a42-99a7-49e18b77ad6c" name="Changes" comment="initial">
-      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GoogleCreds.example.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/agents/collector.py" beforeDir="false" afterPath="$PROJECT_DIR$/agents/collector.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/agents/reporter.py" beforeDir="false" afterPath="$PROJECT_DIR$/agents/reporter.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/agents/secretary.py" beforeDir="false" afterPath="$PROJECT_DIR$/agents/secretary.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/messages.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/messages.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/message_flow.mmd" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/message_flow.svg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/nlu/extractor.py" beforeDir="false" afterPath="$PROJECT_DIR$/nlu/extractor.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/simulate.py" beforeDir="false" afterPath="$PROJECT_DIR$/simulate.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/storage/budget_repository.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/storage/collector_repository.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/storage/repositories.py" beforeDir="false" afterPath="$PROJECT_DIR$/storage/repositories.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/storage/task_repository.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/sheets.py" beforeDir="false" />
-    </list>
+    <list default="true" id="482fcb25-dff2-4a42-99a7-49e18b77ad6c" name="Changes" comment="initial" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -135,7 +112,15 @@
       <option name="project" value="LOCAL" />
       <updated>1782205867195</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="initial">
+      <option name="closed" value="true" />
+      <created>1782229969952</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1782229969953</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
