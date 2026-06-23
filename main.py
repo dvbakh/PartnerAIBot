@@ -1,320 +1,236 @@
+"""
+Entry point: the Telegram bot (a thin interface layer, HCI).
+
+The bot translates the human's messages into agent calls and shows the replies.
+It also acts as the "runtime": it arms the deadline timers and tells the
+coordinator when it is time to remind or to reassign a subtask.
+
+Roles:
+  * Analyst (аналитик) — states the collection task and receives the report.
+  * Manager (менеджер) — provides the budgets for a given channel.
+
+Single-account demonstration: the role (analyst/manager) is switched with
+buttons, so the whole cycle can be shown by one person. The /timeout command
+immediately simulates a missed deadline — handy to show the reminder and the
+reassignment without waiting for the real timer.
+
+User-facing strings are kept in Russian.
+"""
+
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
+
+from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
-from storage.db import init_db
-import sqlite3
-from storage.db import DB_PATH
+from aiogram.filters import Command, CommandStart
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
-from config import (
-    MANAGER_CHAT_ID,
-    TELEGRAM_TOKEN,
-    USE_PROXY,
-    PROXY_URL,
-    GEO_STRUCTURE
-)
-
+from config import (ESCALATE_AFTER_SEC, PROXY_URL, REMINDER_AFTER_SEC,
+                    TELEGRAM_TOKEN, USE_PROXY)
+from core.bus import MessageBus
 from agents.secretary import SecretaryAgent
-from agents.coordinator import Coordinator
-from agents.collector import CollectorAgent
+from agents.coordinator import CoordinatorAgent
+from agents.reporter import ReporterAgent
+from agents.validator import ValidatorAgent
+from storage.db import init_db, reset_db
+from storage.repositories import CollectorRepository
 
-from storage.task_repository import TaskRepository
-from storage.collector_repository import CollectorRepository
-
-from utils.sheets import append_budget_rows
-
-
-# ---------------- logging ----------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# -------------- proxy ---------
-if USE_PROXY:
-    session = AiohttpSession(proxy=PROXY_URL)
-else:
-    session = AiohttpSession()
+BTN_ANALYST = "📊 Аналитик"
+BTN_MANAGER = "👔 Менеджер"
+ROLE_KB = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text=BTN_ANALYST), KeyboardButton(text=BTN_MANAGER)]],
+    resize_keyboard=True,
+)
 
+roles: dict[int, str] = {}
+
+session = AiohttpSession(proxy=PROXY_URL) if USE_PROXY else AiohttpSession()
 bot = Bot(token=TELEGRAM_TOKEN, session=session)
 dp = Dispatcher()
 
-# ---------------- state ----------------
-secretary_states = {}
+
+async def notify(chat_id: int, text: str, keyboard=None) -> None:
+    await bot.send_message(chat_id, text, reply_markup=keyboard)
 
 
-# =========================================================
-# ROLE CHECK
-# =========================================================
-def is_manager(chat_id: int) -> bool:
-    return chat_id == MANAGER_CHAT_ID
+# ---------- multi-agent system ----------
+bus = MessageBus()
+secretary = SecretaryAgent(bus, notify)
+coordinator = CoordinatorAgent(bus, notify)
+reporter = ReporterAgent(bus, notify)
+validator = ValidatorAgent(bus, notify)
 
 
-# =========================================================
-# START
-# =========================================================
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    if is_manager(message.chat.id):
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute(
-            "UPDATE collectors SET status='cancelled' WHERE respondent_chat_id=? AND status IN ('created','contacted','waiting_response')",
-            (message.chat.id,))
-        conn.commit()
-        conn.close()
-        secretary_states[message.chat.id] = SecretaryAgent.create_state()
-        await message.answer("Привет! Опиши задачу для сбора бюджетов.")
-    else:
-        await message.answer("Нет доступа.")
+# ---------- deadline timers (the runtime for the agents) ----------
+watch_tasks: dict[int, asyncio.Task] = {}
 
 
-# =========================================================
-# MAIN HANDLER
-# =========================================================
-@dp.message()
-async def create_and_run_task(task_state: dict, bot: Bot):
-    """Создаёт задачу и запускает координатора."""
-    from models.task import Task
-    task_obj = Task(
-        month=task_state["month"],
-        geo_list=task_state["geo_list"],
-        deadline=task_state["deadline"],
-        status="created"
-    )
-    task_id = TaskRepository.create(task_obj)
-    logger.info(f"Task created: {task_id}")
-
-    task_obj.id = task_id
-    coordinator = Coordinator(task_obj)
-    coordinator.create_collectors()
-    await coordinator.start_collection(bot)
+def schedule_watch(collector_id: int) -> None:
+    cancel_watch(collector_id)
+    watch_tasks[collector_id] = asyncio.create_task(_watch(collector_id))
 
 
-@dp.message()
-async def handle_message(message: types.Message):
-    chat_id = message.chat.id
-    text = message.text
-    logger.info(f"Message from {chat_id}: {text}")
+def cancel_watch(collector_id: int) -> None:
+    t = watch_tasks.pop(collector_id, None)
+    if t and t is not asyncio.current_task():
+        t.cancel()
 
-    # ===================== ТЕСТОВЫЙ РЕЖИМ =====================
-    if chat_id in test_states:
-        role = test_states[chat_id]
 
-        # Выбор роли
-        if text == "Менеджер":
-            test_states[chat_id] = "manager"
-            await message.answer("Ты менеджер. Опиши задачу.", reply_markup=role_keyboard)
-            return
-        if text == "Респондент":
-            test_states[chat_id] = "collector"
-            await message.answer("Ты респондент. Отправь бюджеты.", reply_markup=role_keyboard)
-            return
-
-        if role is None:
-            await message.answer("Сначала выбери роль кнопкой.", reply_markup=role_keyboard)
-            return
-
-        # === Роль МЕНЕДЖЕР ===
-        if role == "manager":
-            state = secretary_states.get(chat_id)
-            if not state:
-                state = SecretaryAgent.create_state()
-
-            result = SecretaryAgent.process_message(state, text)
-            secretary_states[chat_id] = result["state"]
-            await message.answer(result["message"])
-
-            if result["action"] == "create_task":
-                await create_and_run_task(result["state"], bot)
-                secretary_states.pop(chat_id, None)
-                await message.answer("Задача создана, сборщики оповещены.")
-            return
-
-        # === Роль РЕСПОНДЕНТ ===
-        if role == "collector":
-            # Ищем активного сборщика именно для этого чата
-            collector = CollectorRepository.get_active_by_chat_id(chat_id)
-            if not collector:
-                await message.answer("Нет активной задачи для сбора бюджетов. Дождитесь запроса.")
-                return
-
-            try:
-                records = CollectorAgent.extract_budgets(text)
-                if records:
-                    CollectorAgent.save_records(
-                        task_id=collector["task_id"],
-                        geo=collector["geo"],
-                        channel=collector["channel"],
-                        records=records
-                    )
-                    CollectorRepository.update_status(collector["id"], "completed")
-                    await message.answer("Принято, спасибо!")
-
-                    remaining = CollectorRepository.get_by_task(collector["task_id"])
-                    if all(r["status"] == "completed" for r in remaining):
-                        logger.info("All collectors completed")
-                        await message.answer("Все данные собраны.")
-                else:
-                    await message.answer("Не удалось распознать бюджеты. Попробуйте ещё.")
-            except Exception as e:
-                logger.exception("Collector error")
-                await message.answer("Ошибка обработки.")
-            return
-
-    # ===================== ОБЫЧНЫЙ РЕЖИМ =====================
-    if is_manager(chat_id):
-        collector = CollectorRepository.get_active_by_chat_id(chat_id)
-        if collector:
-            # Сначала пытаемся обработать как ответ респондента
-            records = CollectorAgent.extract_budgets(text)
-            if records:
-                CollectorAgent.save_records(
-                    task_id=collector["task_id"],
-                    geo=collector["geo"],
-                    channel=collector["channel"],
-                    records=records
-                )
-                CollectorRepository.update_status(collector["id"], "completed")
-                await message.answer("Принято, спасибо!")
-
-                remaining = CollectorRepository.get_by_task(collector["task_id"])
-                if all(r["status"] == "completed" for r in remaining):
-                    logger.info("All collectors completed")
-                    await message.answer("Все данные собраны.")
-                secretary_states.pop(chat_id, None)
-                return
-            else:
-                # Не получилось извлечь бюджеты – отменяем сборщика, идём в SecretaryAgent
-                CollectorRepository.update_status(collector["id"], "cancelled")
-
-        # SecretaryAgent
-        state = secretary_states.get(chat_id)
-        if not state:
-            state = SecretaryAgent.create_state()
-
-        result = SecretaryAgent.process_message(state, text)
-        secretary_states[chat_id] = result["state"]
-        await message.answer(result["message"])
-
-        if result["action"] == "create_task":
-            await create_and_run_task(result["state"], bot)
-            secretary_states.pop(chat_id, None)
-        return
-
-    # Обычный респондент (не менеджер)
-    collector = CollectorRepository.get_active_by_chat_id(chat_id)
-    if collector:
-        try:
-            records = CollectorAgent.extract_budgets(text)
-            if not records:
-                await message.answer("Не удалось распознать данные.")
-                return
-            CollectorAgent.save_records(
-                task_id=collector["task_id"],
-                geo=collector["geo"],
-                channel=collector["channel"],
-                records=records
-            )
-            CollectorRepository.update_status(collector["id"], "completed")
-            await message.answer("Принято, спасибо!")
-
-            remaining = CollectorRepository.get_by_task(collector["task_id"])
-            if all(r["status"] == "completed" for r in remaining):
-                logger.info("All collectors completed")
-                await message.answer("Все данные собраны.")
-        except Exception as e:
-            logger.exception("Collector error")
-            await message.answer("Ошибка обработки.")
-        return
-
-    await message.answer("Нет активных задач.")
-
-    # ------------------------------------------------------------
-    # 3. Ни менеджер, ни активный респондент
-    # ------------------------------------------------------------
-    await message.answer("Нет активных задач.")
-
-    # =====================================================
-    # 2. COLLECTOR FLOW (MANAGERS)
-    # =====================================================
-    collector = CollectorRepository.get_active_by_chat_id(chat_id)
-
-    if not collector:
-        await message.answer("Нет активных задач.")
-        return
-
+async def _watch(collector_id: int) -> None:
     try:
-        # 1. extract budgets
-        records = CollectorAgent.extract_budgets(text)
+        await asyncio.sleep(REMINDER_AFTER_SEC)
+        if coordinator.is_waiting(collector_id):
+            await coordinator.remind(collector_id)
+        await asyncio.sleep(max(1, ESCALATE_AFTER_SEC - REMINDER_AFTER_SEC))
+        if coordinator.is_waiting(collector_id):
+            await coordinator.handle_timeout(collector_id)
+    except asyncio.CancelledError:
+        pass
 
-        if not records:
-            await message.answer("Не удалось распознать данные.")
+
+coordinator.on_assigned = schedule_watch
+coordinator.on_resolved = cancel_watch
+
+
+# =========================================================
+# Commands
+# =========================================================
+@dp.message(CommandStart())
+async def cmd_start(message: Message):
+    roles.pop(message.chat.id, None)
+    await message.answer(
+        "Привет! Прототип мультиагентного сбора бюджетов.\n\n"
+        "Выберите роль кнопкой ниже:\n"
+        "• Аналитик — поставить задачу на сбор и получить отчёт;\n"
+        "• Менеджер — прислать бюджеты по запросу.\n\n"
+        "Команды: /help, /reset, /status, /timeout.",
+        reply_markup=ROLE_KB,
+    )
+
+
+@dp.message(Command("help"))
+async def cmd_help(message: Message):
+    await message.answer(
+        "Сценарий демонстрации с одного аккаунта:\n"
+        "1) «Аналитик» → напишите задачу, например:\n"
+        "   «Собери бюджеты за апрель по BY, дедлайн 25.04».\n"
+        "   Можно указать канал: «… по BY Mobile …» — тогда соберём только его.\n"
+        "2) Бот проведёт тендер и пришлёт запросы менеджерам.\n"
+        "3) «Менеджер» → отвечайте списком, например:\n"
+        "   Google 1000\n   Meta 9000\n"
+        "   (если сумма резко отличается от прошлого месяца, проверка переспросит).\n"
+        "4) /timeout — сымитировать просрочку дедлайна и показать переназначение.\n"
+        "5) Когда все подзадачи закрыты, аналитик получит итоговый отчёт.\n\n"
+        "/reset — начать заново.",
+        reply_markup=ROLE_KB,
+    )
+
+
+@dp.message(Command("reset"))
+async def cmd_reset(message: Message):
+    for cid in list(watch_tasks):
+        cancel_watch(cid)
+    reset_db(seed_history=True)
+    roles.clear()
+    secretary._states.clear()
+    coordinator._collectors.clear()
+    coordinator._proposals.clear()
+    coordinator._backups.clear()
+    coordinator._round_of.clear()
+    coordinator._round_meta.clear()
+    coordinator._resolved_rounds.clear()
+    coordinator._pending.clear()
+    coordinator._analyst_chat.clear()
+    await message.answer("Данные очищены, история прошлого месяца восстановлена.",
+                         reply_markup=ROLE_KB)
+
+
+@dp.message(Command("status"))
+async def cmd_status(message: Message):
+    chat_id = message.chat.id
+    role = roles.get(chat_id, "не выбрана")
+    active = CollectorRepository.get_active_by_chat_id(chat_id)
+    extra = (f"\nОжидает ответа: {active['geo']}/{active['channel']} "
+             f"({active['manager_name']})." if active else "\nАктивных запросов нет.")
+    await message.answer(f"Ваша роль: {role}.{extra}", reply_markup=ROLE_KB)
+
+
+@dp.message(Command("timeout"))
+async def cmd_timeout(message: Message):
+    """Simulate a missed deadline for the current active request."""
+    active = CollectorRepository.get_active_by_chat_id(message.chat.id)
+    if not active:
+        await message.answer("Нет активного запроса, который можно просрочить.",
+                             reply_markup=ROLE_KB)
+        return
+    await coordinator.handle_timeout(active["id"])
+
+
+# =========================================================
+# Main handler
+# =========================================================
+@dp.message()
+async def on_message(message: Message):
+    chat_id = message.chat.id
+    text = (message.text or "").strip()
+    if not text:
+        return
+
+    if text == BTN_ANALYST:
+        roles[chat_id] = "analyst"
+        await message.answer("Роль: аналитик. Опишите задачу на сбор бюджетов.",
+                             reply_markup=ROLE_KB)
+        return
+    if text == BTN_MANAGER:
+        roles[chat_id] = "manager"
+        await message.answer("Роль: менеджер. Отвечайте на запросы бюджетов.",
+                             reply_markup=ROLE_KB)
+        return
+
+    role = roles.get(chat_id)
+    if role is None:
+        await message.answer("Сначала выберите роль кнопкой ниже.", reply_markup=ROLE_KB)
+        return
+
+    # analyst -> secretary agent
+    if role == "analyst":
+        reply = await secretary.handle_user(chat_id, text)
+        if reply:
+            await message.answer(reply, reply_markup=ROLE_KB)
+        return
+
+    # manager -> the relevant collector agent
+    if role == "manager":
+        active = CollectorRepository.get_active_by_chat_id(chat_id)
+        if not active:
+            await message.answer("Сейчас нет активных запросов на бюджет.",
+                                 reply_markup=ROLE_KB)
             return
-
-        # 2. save to DB
-        CollectorAgent.save_records(
-            task_id=collector["task_id"],
-            geo=collector["geo"],
-            channel=collector["channel"],
-            records=records
-        )
-
-        # 3. mark completed
-        CollectorRepository.update_status(
-            collector["id"],
-            "completed"
-        )
-
-        await message.answer("Принято, спасибо!")
-
-        # =====================================================
-        # 4. CHECK IF TASK IS FINISHED → WRITE TO SHEETS
-        # =====================================================
-        remaining = CollectorRepository.get_by_task(
-            collector["task_id"]
-        )
-
-        all_done = all(r["status"] == "completed" for r in remaining)
-
-        if all_done:
-
-            logger.info("All collectors completed → exporting to Google Sheets")
-
-            # агрегируем данные из БД
-            all_rows = []
-
-            for r in remaining:
-
-                # здесь можно потом заменить на SQL join
-                # сейчас упрощённо через records уже записанные
-
-                pass
-
-            # берем напрямую из budget_records было бы лучше,
-            # но оставим через идею:
-            # → Coordinator финализирует
-
-            await message.answer("Все данные собраны. Формирую отчёт...")
-
-            # TO_DO: здесь можно добавить TaskRepository.get_budgets(task_id)
-
-    except Exception as e:
-        logger.exception("Collector error")
-        await message.answer("Ошибка обработки.")
+        agent = coordinator.get_collector_agent(active["id"])
+        if agent is None:
+            await message.answer("Не удалось найти подзадачу.", reply_markup=ROLE_KB)
+            return
+        reply = await agent.handle_user(chat_id, text)
+        if reply:
+            await message.answer(reply, reply_markup=ROLE_KB)
+        return
 
 
-# =========================================================
-# RUN
-# =========================================================
 async def main():
     init_db()
     logger.info("Bot started")
     try:
         await dp.start_polling(bot)
     finally:
-        logger.info("Бот остановлен")
+        await bot.session.close()
+        logger.info("Bot stopped")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

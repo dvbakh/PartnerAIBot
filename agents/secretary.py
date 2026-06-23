@@ -1,128 +1,100 @@
-import json
-import logging
+"""
+Secretary agent.
 
-from openai import OpenAI
-from config import MISTRAL_API_KEY
+Talks to the analyst in natural language and collects the task parameters:
+month, GEO list, optional channels and deadline. If a required field is missing
+it asks again (mixed-initiative interaction, Horvitz 1999). Channels are
+optional: if the analyst names a channel (e.g. "по BY Mobile"), only that
+channel is collected; otherwise all channels of each GEO are collected.
+
+Once the required fields are gathered the secretary forms the task and asks the
+coordinator to carry it out (REQUEST performative).
+
+User-facing strings are kept in Russian on purpose.
+"""
+
+import logging
+from typing import Dict, Optional
+
+from agents.base import BaseAgent
+from core.messages import AgentMessage, Performative
+from nlu.extractor import extract_task
 
 logger = logging.getLogger(__name__)
 
-client = OpenAI(
-    api_key=MISTRAL_API_KEY,
-    base_url="https://api.mistral.ai/v1"
-)
-MODEL = "mistral-small-latest"
 
-class SecretaryAgent:
-    """
-    AI-агент для обработки сообщений менеджера.
-    Извлекает месяц, список GEO и дедлайн с помощью Mistral.
-    """
-
-    def __init__(self):
-        self.state = {
-            "month": None,
-            "geo_list": None,
-            "deadline": None,
-            "waiting_confirmation": False,
-        }
-
-    # ============================================================
-    # Статический интерфейс для main.py
-    # ============================================================
-    @staticmethod
-    def create_state() -> dict:
-        """Создаёт начальное состояние (словарь)."""
-        return {
-            "month": None,
-            "geo_list": None,
-            "deadline": None,
-            "waiting_confirmation": False,
-        }
+class SecretaryAgent(BaseAgent):
+    def __init__(self, bus, notify):
+        super().__init__("secretary", bus, notify)
+        self._states: Dict[int, dict] = {}  # per-chat dialog state
 
     @staticmethod
-    def process_message(state: dict, text: str) -> dict:
+    def _empty_state() -> dict:
+        return {"month": None, "geo_list": [], "channels": [], "deadline": None}
+
+    def reset(self, chat_id: int) -> None:
+        self._states.pop(chat_id, None)
+
+    async def handle_user(self, chat_id: int, text: str) -> Optional[str]:
         """
-        Обрабатывает сообщение менеджера.
-        Возвращает словарь с action, state и message.
+        Handle an analyst's line. Returns the reply text to show, or None if the
+        agent has already sent everything itself via notify.
         """
-        agent = SecretaryAgent()
-        agent.state = state
+        state = self._states.get(chat_id) or self._empty_state()
 
-        # Извлекаем параметры через LLM
-        extracted = agent._llm_extract_task(text)
-        if extracted:
-            agent._merge_state(extracted)
+        extracted = extract_task(text)
+        if extracted.get("month"):
+            state["month"] = extracted["month"]
+        if extracted.get("geo_list"):
+            for g in extracted["geo_list"]:
+                if g not in state["geo_list"]:
+                    state["geo_list"].append(g)
+        if extracted.get("channels"):
+            for c in extracted["channels"]:
+                if c not in state["channels"]:
+                    state["channels"].append(c)
+        if extracted.get("deadline"):
+            state["deadline"] = extracted["deadline"]
 
-        if agent._is_state_complete():
-            return {
-                "action": "create_task",
-                "state": agent.state,
-                "message": "Задача сформирована. Запускаю сбор бюджета."
-            }
-        else:
-            return {
-                "action": "continue",
-                "state": agent.state,
-                "message": agent._build_missing_fields_message()
-            }
+        self._states[chat_id] = state
 
-    # ============================================================
-    # LLM-экстракция параметров задачи
-    # ============================================================
-    def _llm_extract_task(self, user_message: str) -> dict:
-        system_prompt = """
-Ты — секретарь, который извлекает параметры задачи из сообщения менеджера.
-Верни только JSON-объект с полями:
-- month (строка, месяц, например "апрель")
-- geo_list (массив строк, GEO из списка: KZ, BY, RU, UA, KG, AM, TJ, UZ)
-- deadline (строка или null, если не указано)
-
-Если какого-то поля нет, верни его как null.
-Не добавляй никаких пояснений, только JSON.
-"""
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.0,
-                response_format={"type": "json_object"}
+        if self._is_complete(state):
+            self.reset(chat_id)
+            channels_text = ", ".join(state["channels"]) if state["channels"] else "все"
+            # first confirm to the analyst (user-facing, Russian)
+            await self.notify_user(
+                chat_id,
+                f"Задача сформирована:\n"
+                f"• Месяц: {state['month']}\n"
+                f"• GEO: {', '.join(state['geo_list'])}\n"
+                f"• Каналы: {channels_text}\n"
+                f"• Дедлайн: {state['deadline']}\n\n"
+                f"Запускаю сбор бюджетов…",
             )
-            raw = response.choices[0].message.content.strip()
-            data = json.loads(raw)
+            # then ask the coordinator to execute it
+            await self.send(AgentMessage(
+                performative=Performative.REQUEST,
+                sender=self.name,
+                receiver="coordinator",
+                content={**state, "analyst_chat_id": chat_id},
+            ))
+            return None
 
-            # Оставляем только допустимые GEO
-            valid_geos = {"KZ", "BY", "RU"}
-            if "geo_list" in data and isinstance(data["geo_list"], list):
-                data["geo_list"] = [g.upper() for g in data["geo_list"] if g.upper() in valid_geos]
-            return data
-        except Exception as e:
-            logger.exception("LLM extraction failed")
-            return {}
+        return self._ask_missing(state)
 
-    # ============================================================
-    # Вспомогательные методы состояния
-    # ============================================================
-    def _merge_state(self, new_state: dict):
-        for k in self.state:
-            if k in new_state and new_state[k] is not None:
-                self.state[k] = new_state[k]
+    @staticmethod
+    def _is_complete(state: dict) -> bool:
+        # channels are optional; month, GEO and deadline are required
+        return bool(state["month"] and state["geo_list"] and state["deadline"])
 
-    def _is_state_complete(self) -> bool:
-        return all([
-            self.state["month"],
-            self.state["geo_list"],
-            self.state["deadline"]
-        ])
-
-    def _build_missing_fields_message(self) -> str:
+    @staticmethod
+    def _ask_missing(state: dict) -> str:
         missing = []
-        if not self.state["month"]:
+        if not state["month"]:
             missing.append("месяц")
-        if not self.state["geo_list"]:
-            missing.append("GEO")
-        if not self.state["deadline"]:
+        if not state["geo_list"]:
+            missing.append("GEO (BY, KZ, RU)")
+        if not state["deadline"]:
             missing.append("дедлайн")
-        return "Уточните: " + ", ".join(missing)
+        return ("Чтобы запустить сбор, уточните: " + ", ".join(missing) +
+                ".\n(Канал можно не указывать — тогда соберём по всем каналам.)")

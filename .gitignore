@@ -1,2 +1,8 @@
-config.py
-GoogleCreds9cf91e5daeee.json
+__pycache__/
+*.pyc
+.env
+GoogleCreds.json
+*.db
+report_task_*.csv
+.venv/
+venv/
