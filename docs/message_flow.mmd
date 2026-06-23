@@ -1,0 +1,40 @@
+%% Message flow for PartnerAIBot (editable source).
+%% Render at https://mermaid.live or with the Mermaid CLI.
+sequenceDiagram
+    actor A as Аналитик (человек)
+    participant S as Секретарь
+    participant C as Координатор
+    participant K as Сборщик
+    actor M as Менеджер (человек)
+    participant V as Валидатор
+    participant R as Отчётник
+
+    A->>S: задача на сбор (текст на ЕЯ)
+    opt mixed-initiative: если не хватает поля
+        S->>A: уточнить месяц / GEO / дедлайн
+        A-->>S: недостающее поле
+    end
+    S->>C: REQUEST (task: month, GEO, channels, deadline)
+    loop Contract Net — по каждой паре GEO×канал
+        C->>K: CFP (объявление подзадачи)
+        K-->>C: PROPOSE (ставка = надёжность - загрузка)
+        C->>K: ACCEPT_PROPOSAL / REJECT_PROPOSAL
+    end
+    K->>M: запрос бюджетов
+    opt дедлайн пропущен
+        K->>M: напоминание
+        C->>K: ACCEPT_PROPOSAL (переназначить на резерв)
+    end
+    M-->>K: бюджеты (список партнёр-сумма)
+    K->>V: REQUEST (проверить vs прошлый месяц)
+    alt результат проверки
+        V-->>K: INFORM (норма)
+    else аномалия > порога
+        V-->>K: CHALLENGE (отклонение)
+        K->>M: подтвердите сумму?
+        M-->>K: «да» / исправленный список
+    end
+    K-->>C: REPORT (подзадача закрыта)
+    C->>R: REQUEST (все собрано → агрегировать)
+    R-->>A: отчёт: суммы по каналам / GEO, партнёры по менеджерам
+    R-->>C: CONFIRM

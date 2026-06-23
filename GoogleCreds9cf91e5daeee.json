@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "savoring-practice",
+  "private_key_id": "9cf91e5daeeefc5d41e8ca83eb4c021ee364707d",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDJNnyBZBLlr2HM\njIGYp8BRVLWQwXVw48F+9WVLvGbhEnC2dJcQ3klWTDReYwBlAZQwuLcgpJnNMd7T\nYD7UQZV1tPIkhYwhvFQR/G6gzFcJX9U9YPb+yWkVC6daHqxB1ygkx0UFoma5R6fL\n/CQPigBQGKK4VDSQaBVtbMDvolU5wfX4Uz3vZpbV7QStY/UYRJ4P8IGrNJadrV0+\nuIowQPKb+yN2SheEqU70W4lU+QBdbWx8R3/EQjiR8KY1qOv45VVjmLrMbys7sMXn\n1YtE+0AF/igPgrHuV32/I6QrfIHbq0ORD0GpZqmKjBSw8nePwhZkObCNLfrz5UXg\nscCm1UqjAgMBAAECggEATinC2va3mo7zNGUekOEVheKct5NXXlezWnDUfUO+SU+D\nBnWrG2vmXEY1D7dwt0wSN40B4oXek0X8s+sO7SBfAX8dk09nnNFObUA8720BoIwg\nR3wr5tTx47GHvKvuqZL9rq/UIbixI+dwiP61OW4X6gVv7KAVXUV5kWzuVAihB9Ke\n0bcfLVBM3mOD/ETNcBwjTOwjvzDAg8vuIgqrWWvMWEymoGFTJYDzf6YSKxESo0e0\nA5i0df+Y6ytTUSaWGhvm8mMZ2VE5g8hSjwufWVmKz95dKWv1CDdGqM1dW19xIzoA\n4yKivM2ghG18qhWkYGDv6xraNEKHyAJeEnioYZeTzQKBgQDywky5v84CZ772DP9W\nerIc/j+wUasb+KUnzjVrBQYBvjl1BeSbxcdF9kbIowe/g5F8nlGKKNPfm8GbNg8t\nT8SmPNA7yLjY6NTklA4mxj0xuK1nJjOcTtLn5Q6sAd5JjUUptZbPw6qhIoiWMlE1\nyt5n7/0NVUTlJWzvPL8R4M+vlQKBgQDUMBFwE04LxzaTUnguPsrquPSw9RjMmN7S\nGH4exVDA+HRE7jjujpR59f7kyxGhVz+wvsGQcOFZV1F2nlgN3Ilq4uMuaOfh14TP\nfW/0j8mnQiMLrUAymLZTmEm6uws7ff7ZYnJByX6pEFLsFva+rJ35Iuy6UJ/veWiO\nLdPqA3JjVwKBgDvNs/sajlS3XCrfXtPeHBzaYbQ9GkskwQMCYNSBg05Qn3T9w6jA\nW2wX1K4+w3zhm6i4k9vWXQO8KkDjW2/NM+PEHYRs2WTOTwwUkTvqIE8scMN1fMdn\n/7sTCb9EIo+6FqzEyGdci59wk3d04969oHa4f32WYQeWZbS2IVf1KxTVAoGBAK8P\nsXNcGgoRo+9MHSdaWyPo0Mimjn1Oqpd/6Z4NgSCUW6j7OjFnpQwybsfo2nTYfQ2f\ndCdtWh7Rsb5Bybg1+ZIb+v8xQg7MNyDRBuspLmA2ap+ZotubruGtRTcwVoYQ35AO\nbuHkEgH+G8v47j5GQFdp/xGAr1NuQVr8aFgr29YlAoGBAJ00B6lJLRj4NrKCa3iP\n9zUpUPWsc8m0kWyWM2m3VoqLy5MsOep8PhzUOKk1lNY2dbA41V8tkzegam9Ug0If\nUiACPbLt8aYsSw+CDnc6XzWXEzyI5HDHsyhfG0Vj2dRfSX0A8Wol5cMI6WoUL3LN\nLKyN8LQ8A95XphWCHaYHQpT6\n-----END PRIVATE KEY-----\n",
+  "client_email": "dima-492@savoring-practice.iam.gserviceaccount.com",
+  "client_id": "103208903103201336371",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/dima-492%40savoring-practice.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
