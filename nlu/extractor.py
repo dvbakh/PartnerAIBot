@@ -26,10 +26,6 @@ from config import (USE_LLM, MISTRAL_API_KEY, LLM_BASE_URL, LLM_MODEL,
 logger = logging.getLogger(__name__)
 
 # -------------------- dictionaries for the rule-based parser --------------------
-_MONTHS = [
-    "январь", "февраль", "март", "апрель", "май", "июнь",
-    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
-]
 # stems in various cases -> canonical form
 _MONTH_ALIASES = {
     "январ": "январь", "феврал": "февраль", "март": "март", "апрел": "апрель",

@@ -64,12 +64,12 @@ class SecretaryAgent(BaseAgent):
             # first confirm to the analyst (user-facing, Russian)
             await self.notify_user(
                 chat_id,
-                f"Задача сформирована:\n"
-                f"• Месяц: {state['month']}\n"
-                f"• GEO: {', '.join(state['geo_list'])}\n"
-                f"• Каналы: {channels_text}\n"
-                f"• Дедлайн: {state['deadline']}\n\n"
-                f"Запускаю сбор бюджетов…",
+                f"Задача сформирована.\n"
+                f"Месяц: {state['month']}\n"
+                f"GEO: {', '.join(state['geo_list'])}\n"
+                f"Каналы: {channels_text}\n"
+                f"Дедлайн: {state['deadline']}\n\n"
+                f"Запускаю сбор бюджетов.",
             )
             # then ask the coordinator to execute it
             await self.send(AgentMessage(

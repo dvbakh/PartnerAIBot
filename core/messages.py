@@ -2,26 +2,23 @@
 Messages exchanged between agents (inspired by FIPA ACL).
 
 A message is a communicative act (speech act): it carries a performative type,
-a sender, a receiver and a payload. The performative set is extended for the
-"Path A" scenarios: a tender (Contract Net) and a data dispute by the validator.
+a sender, a receiver and a payload. The performative set covers the "Path A"
+scenarios: a tender (Contract Net) and a data dispute by the validator.
 
 Sources: the FIPA ACL specifications and the FIPA Contract Net Interaction
 Protocol; Wooldridge, An Introduction to MultiAgent Systems.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
 
 class Performative(str, Enum):
-    # basic
-    REQUEST = "request"   # ask to perform a task
-    ASSIGN = "assign"     # hand over a subtask (after the tender)
-    INFORM = "inform"     # report a fact / result
-    REPORT = "report"     # report subtask completion
-    CONFIRM = "confirm"   # confirm completion
-    FAILURE = "failure"   # report a failure / timeout
+    REQUEST = "request"               # ask to perform a task
+    INFORM = "inform"                 # report a fact / result
+    REPORT = "report"                 # report subtask completion
+    CONFIRM = "confirm"               # confirm completion
     # Contract Net (tender for an executor)
     CFP = "cfp"                       # call for proposals — announce a subtask
     PROPOSE = "propose"               # a candidate's bid
@@ -38,7 +35,6 @@ class AgentMessage:
     receiver: str
     content: Any = None
     conversation_id: Optional[int] = None  # usually = task_id
-    meta: dict = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return (f"<{self.performative.value} {self.sender} -> {self.receiver} "

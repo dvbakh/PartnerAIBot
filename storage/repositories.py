@@ -110,6 +110,52 @@ class CollectorRepository:
         conn.close()
         return row
 
+    @staticmethod
+    def get_waiting_for_chat(chat_id: int) -> List:
+        """All collectors currently waiting for an answer from this manager."""
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT * FROM collectors
+               WHERE manager_chat_id = ? AND status = 'waiting_response'
+               ORDER BY id ASC""",
+            (chat_id,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return rows
+
+    @staticmethod
+    def get_unanswered_by_task(task_id: int) -> List:
+        """Collectors that were asked but did not deliver (timed out / failed)."""
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT * FROM collectors
+               WHERE task_id = ? AND status IN ('timed_out', 'failed')
+               ORDER BY id ASC""",
+            (task_id,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return rows
+
+    @staticmethod
+    def list_waiting_for_chat(chat_id: int) -> List:
+        """All collectors currently waiting for an answer from this manager
+        (used to build the per-manager buttons in demo mode)."""
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT * FROM collectors
+               WHERE manager_chat_id = ? AND status = 'waiting_response'
+               ORDER BY id ASC""",
+            (chat_id,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return rows
+
 
 class BudgetRepository:
     @staticmethod

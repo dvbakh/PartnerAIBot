@@ -29,8 +29,10 @@ from storage.repositories import (BudgetRepository, CollectorRepository,
 
 logger = logging.getLogger(__name__)
 
-# affirmative replies that confirm a disputed value (Russian, user-facing input)
+# affirmative / negative replies in the dispute dialog (Russian, user-facing input)
 _YES = {"да", "да.", "ок", "ok", "верно", "подтверждаю", "yes", "confirm"}
+_NO = {"нет", "нет.", "прошлое", "предыдущее", "замени", "заменить",
+       "более вероятное", "no"}
 
 
 class CollectorAgent(BaseAgent):
@@ -50,6 +52,7 @@ class CollectorAgent(BaseAgent):
         self.status = "candidate"
         self.retries = 0
         self._records_in_flight: List[dict] = []
+        self._suggested_records: List[dict] = []  # more-probable values for a dispute
 
     # ---------- reaction to messages from other agents ----------
     async def receive(self, message: AgentMessage) -> None:
@@ -103,8 +106,11 @@ class CollectorAgent(BaseAgent):
 
         # continuation of the dialog after a dispute
         if self.status == "awaiting_confirmation":
-            if low in _YES:
+            if low in _YES:                       # keep the submitted values
                 await self._finalize(self._records_in_flight)
+                return None
+            if low in _NO:                        # assign the more probable values
+                await self._finalize(self._suggested_records)
                 return None
             # otherwise treat it as a corrected list — re-parse below
 
@@ -138,15 +144,23 @@ class CollectorAgent(BaseAgent):
 
     async def _handle_challenge(self, issues: List[dict]) -> None:
         self.status = "awaiting_confirmation"
+        # the validator's "more probable" value for a partner is last month's value
+        probable = {i["partner"]: i["old"] for i in issues}
+        self._suggested_records = [
+            {"partner": r["partner"], "budget": probable.get(r["partner"], r["budget"])}
+            for r in self._records_in_flight
+        ]
         lines = "\n".join(
-            f"• {i['partner']}: {i['new']:.0f} (в прошлом месяце {i['old']:.0f}, "
+            f"{i['partner']}: {i['new']:.0f} (в прошлом месяце {i['old']:.0f}, "
             f"изменение ~{i['change_pct']}%)" for i in issues
         )
         await self.notify_user(
             self.manager_chat_id,
             "Проверка нашла резкие отклонения от прошлого месяца:\n"
             f"{lines}\n\n"
-            "Если суммы верны — напишите «да». Если нет — пришлите исправленный список.",
+            "«да» — оставить присланные суммы.\n"
+            "«нет» — принять более вероятные значения прошлого месяца.\n"
+            "Либо пришлите исправленный список.",
         )
 
     async def _finalize(self, records: List[dict]) -> None:
@@ -155,10 +169,10 @@ class CollectorAgent(BaseAgent):
                                     self.manager_name, r["partner"], float(r["budget"]))
         CollectorRepository.update_status(self.collector_id, "completed")
         self.status = "completed"
-        lines = "\n".join(f"• {r['partner']}: {float(r['budget']):.0f}" for r in records)
+        lines = "\n".join(f"{r['partner']} — {float(r['budget']):.0f}" for r in records)
         await self.notify_user(
             self.manager_chat_id,
-            f"Принято ({self.geo}/{self.channel}), спасибо!\n{lines}",
+            f"Принято ({self.geo}/{self.channel}), спасибо.\n{lines}",
         )
         await self.send(AgentMessage(
             performative=Performative.REPORT, sender=self.name,

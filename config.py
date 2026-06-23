@@ -42,14 +42,9 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "your-mistral-key-here")  # examp
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.mistral.ai/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "mistral-small-latest")
 
-# ======== Google Sheets (disabled by default) ========
-USE_SHEETS = _flag("USE_SHEETS", False)
-GOOGLE_CREDS_FILE = os.getenv("GOOGLE_CREDS_FILE", "GoogleCreds.json")
-
-# ======== Demo mode: a single account plays every role ========
-DEMO_MODE = _flag("DEMO_MODE", True)
-# The analyst's Telegram id. In demo mode the managers share the same id,
-# so the whole cycle can be shown from one account.
+# ======== Demo: the analyst's Telegram id ========
+# In the single-account demo the managers share this id, so the whole cycle
+# can be shown from one account.
 ANALYST_CHAT_ID = int(os.getenv("ANALYST_CHAT_ID", "1057293934"))
 
 VALID_GEOS = {"BY", "KZ", "RU"}
@@ -73,7 +68,6 @@ ANOMALY_THRESHOLD = float(os.getenv("ANOMALY_THRESHOLD", "0.5"))
 # Manager names are user-facing, so they stay in Russian.
 GEO_STRUCTURE = {
     "BY": {
-        "google_sheet_id": "1A2B3C4D5E6F7G8H9I0J",
         "channels": {
             "Mobile": [
                 {"name": "Марина", "chat_id": ANALYST_CHAT_ID, "reliability": 0.9},
@@ -85,7 +79,6 @@ GEO_STRUCTURE = {
         },
     },
     "KZ": {
-        "google_sheet_id": "1A2B3C4D5E6F7G8H9I0K",
         "channels": {
             "Mobile": [
                 {"name": "Константин", "chat_id": ANALYST_CHAT_ID, "reliability": 0.7},

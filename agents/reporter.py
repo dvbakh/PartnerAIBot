@@ -2,12 +2,10 @@
 Reporter agent.
 
 When the coordinator signals that the data is collected (REQUEST), the reporter
-aggregates the budgets for the task, builds a summary for the analyst and
-exports the result. In demo mode (USE_SHEETS=False) it writes a CSV and sends
-the summary to the chat; with Google Sheets enabled it appends rows there.
+aggregates the budgets for the task, builds a summary for the analyst and writes
+a CSV. The summary lists sums per GEO+channel, the total number of partners and
+the budget, and the managers who did not submit. The CSV columns are:
 
-The summary shows: totals by channel, totals by GEO, and how many partners each
-manager submitted. The exported table has the columns:
     month (mm-dd-yyyy), GEO, Detailed (Channel), Partner, Budget
 
 User-facing strings are kept in Russian.
@@ -20,9 +18,9 @@ from datetime import datetime
 from typing import List
 
 from agents.base import BaseAgent
-from config import GEO_STRUCTURE, USE_SHEETS
 from core.messages import AgentMessage, Performative
-from storage.repositories import BudgetRepository, HistoryRepository, TaskRepository
+from storage.repositories import (BudgetRepository, CollectorRepository,
+                                  HistoryRepository, TaskRepository)
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +37,9 @@ def _month_to_date(month_name: str) -> str:
     The task carries no year, so the current year is used.
     """
     num = _RU_MONTH_NUM.get((month_name or "").strip().lower())
-    year = datetime.now().year
     if not num:
         return month_name or ""
-    return f"{num:02d}-01-{year}"
+    return f"{num:02d}-01-{datetime.now().year}"
 
 
 class ReporterAgent(BaseAgent):
@@ -59,6 +56,7 @@ class ReporterAgent(BaseAgent):
     async def _build_report(self, task_id: int, analyst_chat_id: int) -> None:
         rows = BudgetRepository.get_by_task(task_id)
         task = TaskRepository.get(task_id)
+        unanswered = CollectorRepository.get_unanswered_by_task(task_id)
 
         if not rows:
             await self.notify_user(analyst_chat_id,
@@ -68,14 +66,12 @@ class ReporterAgent(BaseAgent):
 
         month_str = _month_to_date(task.month if task else "")
         csv_path = self._write_csv(task_id, month_str, rows)
-        if USE_SHEETS:
-            self._export_to_sheets(month_str, rows)
 
         # store collected values as history for next month's checks
         for r in rows:
             HistoryRepository.upsert(r["geo"], r["channel"], r["partner"], r["budget"])
 
-        summary = self._format_summary(task, rows, csv_path)
+        summary = self._format_summary(task, rows, unanswered, csv_path)
         await self.notify_user(analyst_chat_id, summary)
         TaskRepository.update_status(task_id, "done")
 
@@ -97,47 +93,36 @@ class ReporterAgent(BaseAgent):
         return path
 
     @staticmethod
-    def _format_summary(task, rows: List, csv_path: str) -> str:
-        by_channel = defaultdict(float)
-        by_geo = defaultdict(float)
-        partners_by_manager = defaultdict(int)
+    def _format_summary(task, rows: List, unanswered: List, csv_path: str) -> str:
+        by_geo_channel = defaultdict(float)
         total = 0.0
         for r in rows:
-            by_channel[r["channel"]] += r["budget"]
-            by_geo[r["geo"]] += r["budget"]
-            partners_by_manager[r["manager_name"] or "—"] += 1
+            by_geo_channel[(r["geo"], r["channel"])] += r["budget"]
             total += r["budget"]
 
-        lines = [f"📊 Отчёт по задаче за {task.month if task else ''}:", ""]
+        lines = [f"Отчёт по задаче за {task.month if task else ''}.", ""]
+
         lines.append("Суммы по каналам:")
-        for ch, amount in by_channel.items():
-            lines.append(f"  {ch}: {amount:.0f}")
-        lines.append("Суммы по GEO:")
-        for geo, amount in by_geo.items():
-            lines.append(f"  {geo}: {amount:.0f}")
-        lines.append("Партнёров прислал каждый менеджер:")
-        for mgr, cnt in partners_by_manager.items():
-            lines.append(f"  {mgr}: {cnt}")
+        for (geo, channel), amount in sorted(by_geo_channel.items()):
+            lines.append(f"{geo} {channel}: {amount:.0f}")
         lines.append("")
-        lines.append(f"Итого: {total:.0f} по {len(rows)} партнёрам.")
+
+        lines.append(f"Всего партнёров: {len(rows)}")
+        lines.append(f"Общий бюджет: {total:.0f}")
+        lines.append("")
+
+        lines.append("Менеджеры, которые не отправили:")
+        if unanswered:
+            seen = set()
+            for c in unanswered:
+                key = (c["manager_name"], c["geo"], c["channel"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                lines.append(f"{c['manager_name']} ({c['geo']}/{c['channel']})")
+        else:
+            lines.append("—")
+        lines.append("")
+
         lines.append(f"Файл: {csv_path}")
         return "\n".join(lines)
-
-    @staticmethod
-    def _export_to_sheets(month_str: str, rows: List) -> None:
-        """Export to Google Sheets (only if enabled)."""
-        try:
-            from utils.sheets import append_budget_rows
-            by_geo_channel = defaultdict(list)
-            for r in rows:
-                by_geo_channel[(r["geo"], r["channel"])].append(r)
-            for (geo, channel), items in by_geo_channel.items():
-                sheet_id = GEO_STRUCTURE.get(geo, {}).get("google_sheet_id")
-                if not sheet_id:
-                    continue
-                payload = [{"month": month_str, "geo": geo, "channel": channel,
-                            "partner": x["partner"], "budget": x["budget"]}
-                           for x in items]
-                append_budget_rows(sheet_id, channel, payload)
-        except Exception:
-            logger.exception("Failed to export to Google Sheets")

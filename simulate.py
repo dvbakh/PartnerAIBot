@@ -1,19 +1,17 @@
 """
 Headless demonstration / self-check WITHOUT Telegram ("Path A").
 
-Runs all the key mechanisms in the console:
+One GEO (BY) is used to keep the demo focused. It runs all the key mechanisms:
   1) a tender for the executor (Contract Net): of two candidate managers for
      BY/Mobile the more reliable one wins;
-  2) a missed deadline and reassignment to a backup (simulated by calling
-     handle_timeout, just like the /timeout command would);
-  3) the validator's check: a suspicious amount is disputed and the human
-     confirms it;
-  4) the normal path and the final report (sums by channel and by GEO, and how
-     many partners each manager submitted).
+  2) a missed deadline and reassignment to a backup (handle_timeout, like the
+     /timeout command);
+  3) the validator's check: a suspicious amount is disputed; here the human
+     answers "нет" and the system assigns the more probable (last month's) value;
+  4) the normal path and the final report.
 
-Note: roles — the analyst states the task and gets the report; the managers
-provide the budgets. The literal Russian phrases below are the user input fed
-into the (Russian-language) bot, so they stay in Russian.
+The literal Russian phrases below are the user input fed into the
+(Russian-language) bot, so they stay in Russian.
 
 Run:  python simulate.py
 """
@@ -45,33 +43,32 @@ async def main():
 
     chat = ANALYST_CHAT_ID
 
-    async def manager_reply(answer):
-        active = CollectorRepository.get_active_by_chat_id(chat)
-        if not active:
-            print(">>> no active request\n")
-            return
-        print(f"[Manager {active['manager_name']} "
-              f"({active['geo']}/{active['channel']})]: {answer!r}\n")
-        agent = coordinator.get_collector_agent(active["id"])
-        reply = await agent.handle_user(chat, answer)
+    async def answer_as(collector_id, text):
+        row = CollectorRepository.get(collector_id)
+        print(f"[Manager {row['manager_name']} ({row['geo']}/{row['channel']})]: "
+              f"{text!r}\n")
+        agent = coordinator.get_collector_agent(collector_id)
+        reply = await agent.handle_user(chat, text)
         if reply:
             print(f"[Bot -> {chat}]\n{reply}\n")
 
-    print("===== 1. Analyst states the task (the tender starts) =====\n")
+    print("===== 1. Analyst states the task; the tender starts (BY only) =====\n")
     await secretary.handle_user(chat, "Собери бюджеты за апрель по BY, дедлайн 25.04")
 
-    print("===== 2. Simulate a missed deadline for the first manager =====\n")
-    active = CollectorRepository.get_active_by_chat_id(chat)
-    await coordinator.handle_timeout(active["id"])
+    print("===== 2. The first manager misses the deadline -> reassignment =====\n")
+    primary = CollectorRepository.get_active_by_chat_id(chat)  # Марина (BY/Mobile)
+    await coordinator.handle_timeout(primary["id"])
 
-    print("===== 3. The backup manager answers (with an anomalous amount) =====\n")
-    await manager_reply("Google 1000\nMeta 9000")
+    print("===== 3. The backup answers with an anomalous amount =====\n")
+    backup = CollectorRepository.get_active_by_chat_id(chat)    # Ольга (BY/Mobile)
+    await answer_as(backup["id"], "Google 1000\nMeta 9000")
 
-    print("===== 4. The human confirms the disputed amount =====\n")
-    await manager_reply("да")
+    print("===== 4. Human says 'нет' -> the more probable value is assigned =====\n")
+    await answer_as(backup["id"], "нет")
 
-    print("===== 5. The second channel answers normally =====\n")
-    await manager_reply("Yandex 3000")
+    print("===== 5. The other channel answers normally =====\n")
+    media = CollectorRepository.get_active_by_chat_id(chat)     # Екатерина (BY/Media)
+    await answer_as(media["id"], "Yandex 3000")
 
 
 if __name__ == "__main__":
